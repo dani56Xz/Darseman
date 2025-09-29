@@ -12,7 +12,7 @@ from telegram.ext import (
 
 TOKEN = "8399118759:AAHPcVstB2N9l94Aorf-WGxbKHomv_EUepI"
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
-WEBHOOK_URL = f"https://sea-2ri6.onrender.com{WEBHOOK_PATH}"
+WEBHOOK_URL = f"https://api.telegram.org/bot8399118759:AAHPcVstB2N9l94Aorf-WGxbKHomv_EUepI/setWebhook?url=https://darseman.onrender.com/8399118759:AAHPcVstB2N9l94Aorf-WGxbKHomv_EUepI{WEBHOOK_PATH}"
 DB_URL = "postgresql://neondb_owner:npg_WtA2VhMHKcg6@ep-lively-queen-aely0rq7-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 # ⚙️ لاگ‌گیری
