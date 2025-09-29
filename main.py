@@ -10,9 +10,10 @@ from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ConversationHandler, ContextTypes
 )
 
+# تنظیم توکن و URL وب‌هوک
 TOKEN = "8399118759:AAHPcVstB2N9l94Aorf-WGxbKHomv_EUepI"
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
-WEBHOOK_URL = f"https://api.telegram.org/bot8399118759:AAHPcVstB2N9l94Aorf-WGxbKHomv_EUepI/setWebhook?url=https://darseman.onrender.com/8399118759:AAHPcVstB2N9l94Aorf-WGxbKHomv_EUepI{WEBHOOK_PATH}"
+WEBHOOK_URL = f"https://darseman.onrender.com{WEBHOOK_PATH}"
 DB_URL = "postgresql://neondb_owner:npg_WtA2VhMHKcg6@ep-lively-queen-aely0rq7-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
 # ⚙️ لاگ‌گیری
@@ -20,6 +21,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
 # 📦 FastAPI app
 app = FastAPI()
@@ -92,149 +94,191 @@ def main_menu_keyboard(lang):
     return InlineKeyboardMarkup(buttons)
 
 async def generate_chart(user_id, lang, is_study=True):
-    plt.switch_backend('Agg')
-    table = 'study_logs' if is_study else 'test_logs'
-    field = 'minutes' if is_study else 'count'
-    label = 'hours_label' if is_study else 'count_label'
-    title_key = 'study_chart_title' if is_study else 'test_chart_title'
-    async with db_pool.acquire() as conn:
-        rows = await conn.fetch(
-            f"SELECT date, SUM({field}) as total FROM {table} WHERE user_id = $1 AND date > CURRENT_DATE - INTERVAL '7 days' GROUP BY date ORDER BY date",
-            user_id
-        )
-    if not rows:
+    try:
+        plt.switch_backend('Agg')
+        table = 'study_logs' if is_study else 'test_logs'
+        field = 'minutes' if is_study else 'count'
+        label = 'hours_label' if is_study else 'count_label'
+        title_key = 'study_chart_title' if is_study else 'test_chart_title'
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                f"SELECT date, SUM({field}) as total FROM {table} WHERE user_id = $1 AND date > CURRENT_DATE - INTERVAL '7 days' GROUP BY date ORDER BY date",
+                user_id
+            )
+        if not rows:
+            return None, get_message(lang, 'no_data')
+        
+        dates = [row['date'] for row in rows]
+        values = [row['total'] / 60 if is_study else row['total'] for row in rows]
+        
+        fig, ax = plt.subplots()
+        ax.bar(dates, values)
+        ax.set_xlabel(get_message(lang, 'date_label'))
+        ax.set_ylabel(get_message(lang, label))
+        ax.set_title(get_message(lang, title_key))
+        plt.xticks(rotation=45)
+        
+        buf = BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight')
+        buf.seek(0)
+        plt.close(fig)
+        return buf, None
+    except Exception as e:
+        logger.error(f"Error generating chart: {e}")
         return None, get_message(lang, 'no_data')
-    
-    dates = [row['date'] for row in rows]
-    values = [row['total'] / 60 if is_study else row['total'] for row in rows]
-    
-    fig, ax = plt.subplots()
-    ax.bar(dates, values)
-    ax.set_xlabel(get_message(lang, 'date_label'))
-    ax.set_ylabel(get_message(lang, label))
-    ax.set_title(get_message(lang, title_key))
-    plt.xticks(rotation=45)
-    
-    buf = BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight')
-    buf.seek(0)
-    plt.close(fig)
-    return buf, None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.effective_user.id
-    async with db_pool.acquire() as conn:
-        row = await conn.fetchrow('SELECT name, language FROM users WHERE id = $1', user_id)
-    if row:
-        context.user_data['lang'] = row['language']
-        context.user_data['name'] = row['name']
-        lang = context.user_data['lang']
-        await update.message.reply_text(get_message(lang, 'welcome_back').format(name=row['name']), reply_markup=main_menu_keyboard(lang))
-        return MAIN
-    else:
-        await update.message.reply_text(get_message('en', 'choose_lang'), reply_markup=lang_keyboard())  # Default to en for choose
-        return CHOOSE_LANG
+    try:
+        user_id = update.effective_user.id
+        logger.info(f"Start command received from user_id: {user_id}")
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow('SELECT name, language FROM users WHERE id = $1', user_id)
+        if row:
+            context.user_data['lang'] = row['language']
+            context.user_data['name'] = row['name']
+            lang = context.user_data['lang']
+            await update.message.reply_text(get_message(lang, 'welcome_back').format(name=row['name']), reply_markup=main_menu_keyboard(lang))
+            return MAIN
+        else:
+            await update.message.reply_text(get_message('en', 'choose_lang'), reply_markup=lang_keyboard())
+            return CHOOSE_LANG
+    except Exception as e:
+        logger.error(f"Error in start: {e}")
+        await update.message.reply_text("An error occurred. Please try again.")
+        return ConversationHandler.END
 
 async def choose_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    lang = query.data.split('_')[1]
-    context.user_data['lang'] = lang
-    await query.edit_message_text(text=get_message(lang, 'enter_name'))
-    return ENTER_NAME
+    try:
+        query = update.callback_query
+        await query.answer()
+        lang = query.data.split('_')[1]
+        context.user_data['lang'] = lang
+        await query.edit_message_text(text=get_message(lang, 'enter_name'))
+        return ENTER_NAME
+    except Exception as e:
+        logger.error(f"Error in choose_lang: {e}")
+        return ConversationHandler.END
 
 async def enter_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    lang = context.user_data['lang']
-    name = update.message.text.strip()
-    if not name:
-        await update.message.reply_text(get_message(lang, 'enter_name'))
-        return ENTER_NAME
-    context.user_data['name'] = name
-    user_id = update.effective_user.id
-    async with db_pool.acquire() as conn:
-        await conn.execute('INSERT INTO users (id, name, language) VALUES ($1, $2, $3)', user_id, name, lang)
-    await update.message.reply_text(get_message(lang, 'saved'), reply_markup=main_menu_keyboard(lang))
-    return MAIN
+    try:
+        lang = context.user_data['lang']
+        name = update.message.text.strip()
+        if not name:
+            await update.message.reply_text(get_message(lang, 'enter_name'))
+            return ENTER_NAME
+        context.user_data['name'] = name
+        user_id = update.effective_user.id
+        async with db_pool.acquire() as conn:
+            await conn.execute('INSERT INTO users (id, name, language) VALUES ($1, $2, $3)', user_id, name, lang)
+        await update.message.reply_text(get_message(lang, 'saved'), reply_markup=main_menu_keyboard(lang))
+        return MAIN
+    except Exception as e:
+        logger.error(f"Error in enter_name: {e}")
+        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'no_data'))
+        return ConversationHandler.END
 
 async def main_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    query = update.callback_query
-    await query.answer()
-    lang = context.user_data['lang']
-    data = query.data
-    if data == 'log_study':
-        await query.edit_message_text(get_message(lang, 'enter_subject'))
-        return LOG_STUDY_SUBJECT
-    elif data == 'log_test':
-        await query.edit_message_text(get_message(lang, 'enter_subject'))
-        return LOG_TEST_SUBJECT
-    elif data == 'view_study' or data == 'view_test':
-        is_study = data == 'view_study'
-        buf, err = await generate_chart(update.effective_user.id, lang, is_study=is_study)
-        if err:
-            await query.edit_message_text(err, reply_markup=main_menu_keyboard(lang))
-        else:
-            await query.message.reply_photo(photo=buf)
-            await query.message.reply_text(get_message(lang, 'main_menu'), reply_markup=main_menu_keyboard(lang))
+    try:
+        query = update.callback_query
+        await query.answer()
+        lang = context.user_data['lang']
+        data = query.data
+        if data == 'log_study':
+            await query.edit_message_text(get_message(lang, 'enter_subject'))
+            return LOG_STUDY_SUBJECT
+        elif data == 'log_test':
+            await query.edit_message_text(get_message(lang, 'enter_subject'))
+            return LOG_TEST_SUBJECT
+        elif data == 'view_study' or data == 'view_test':
+            is_study = data == 'view_study'
+            buf, err = await generate_chart(update.effective_user.id, lang, is_study=is_study)
+            if err:
+                await query.edit_message_text(err, reply_markup=main_menu_keyboard(lang))
+            else:
+                await query.message.reply_photo(photo=buf)
+                await query.message.reply_text(get_message(lang, 'main_menu'), reply_markup=main_menu_keyboard(lang))
+            return MAIN
         return MAIN
-    return MAIN
+    except Exception as e:
+        logger.error(f"Error in main_button: {e}")
+        await query.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'no_data'))
+        return MAIN
 
 async def log_study_subject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    lang = context.user_data['lang']
-    subject = update.message.text.strip()
-    if not subject:
-        await update.message.reply_text(get_message(lang, 'enter_subject'))
-        return LOG_STUDY_SUBJECT
-    context.user_data['temp_subject'] = subject
-    await update.message.reply_text(get_message(lang, 'enter_time'))
-    return LOG_STUDY_TIME
+    try:
+        lang = context.user_data['lang']
+        subject = update.message.text.strip()
+        if not subject:
+            await update.message.reply_text(get_message(lang, 'enter_subject'))
+            return LOG_STUDY_SUBJECT
+        context.user_data['temp_subject'] = subject
+        await update.message.reply_text(get_message(lang, 'enter_time'))
+        return LOG_STUDY_TIME
+    except Exception as e:
+        logger.error(f"Error in log_study_subject: {e}")
+        return ConversationHandler.END
 
 async def log_study_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    lang = context.user_data['lang']
     try:
-        minutes = int(update.message.text.strip())
-        if minutes <= 0:
-            raise ValueError
-    except ValueError:
-        await update.message.reply_text(get_message(lang, 'invalid_time'))
-        return LOG_STUDY_TIME
-    user_id = update.effective_user.id
-    subject = context.user_data.pop('temp_subject', None)
-    async with db_pool.acquire() as conn:
-        await conn.execute(
-            'INSERT INTO study_logs (user_id, date, subject, minutes) VALUES ($1, CURRENT_DATE, $2, $3)',
-            user_id, subject, minutes
-        )
-    await update.message.reply_text(get_message(lang, 'logged'), reply_markup=main_menu_keyboard(lang))
-    return MAIN
+        lang = context.user_data['lang']
+        try:
+            minutes = int(update.message.text.strip())
+            if minutes <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(get_message(lang, 'invalid_time'))
+            return LOG_STUDY_TIME
+        user_id = update.effective_user.id
+        subject = context.user_data.pop('temp_subject', None)
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                'INSERT INTO study_logs (user_id, date, subject, minutes) VALUES ($1, CURRENT_DATE, $2, $3)',
+                user_id, subject, minutes
+            )
+        await update.message.reply_text(get_message(lang, 'logged'), reply_markup=main_menu_keyboard(lang))
+        return MAIN
+    except Exception as e:
+        logger.error(f"Error in log_study_time: {e}")
+        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'no_data'))
+        return MAIN
 
 async def log_test_subject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    lang = context.user_data['lang']
-    subject = update.message.text.strip()
-    if not subject:
-        await update.message.reply_text(get_message(lang, 'enter_subject'))
-        return LOG_TEST_SUBJECT
-    context.user_data['temp_subject'] = subject
-    await update.message.reply_text(get_message(lang, 'enter_test_count'))
-    return LOG_TEST_COUNT
+    try:
+        lang = context.user_data['lang']
+        subject = update.message.text.strip()
+        if not subject:
+            await update.message.reply_text(get_message(lang, 'enter_subject'))
+            return LOG_TEST_SUBJECT
+        context.user_data['temp_subject'] = subject
+        await update.message.reply_text(get_message(lang, 'enter_test_count'))
+        return LOG_TEST_COUNT
+    except Exception as e:
+        logger.error(f"Error in log_test_subject: {e}")
+        return ConversationHandler.END
 
 async def log_test_count(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    lang = context.user_data['lang']
     try:
-        count = int(update.message.text.strip())
-        if count <= 0:
-            raise ValueError
-    except ValueError:
-        await update.message.reply_text(get_message(lang, 'invalid_count'))
-        return LOG_TEST_COUNT
-    user_id = update.effective_user.id
-    subject = context.user_data.pop('temp_subject', None)
-    async with db_pool.acquire() as conn:
-        await conn.execute(
-            'INSERT INTO test_logs (user_id, date, subject, count) VALUES ($1, CURRENT_DATE, $2, $3)',
-            user_id, subject, count
-        )
-    await update.message.reply_text(get_message(lang, 'tests_logged'), reply_markup=main_menu_keyboard(lang))
-    return MAIN
+        lang = context.user_data['lang']
+        try:
+            count = int(update.message.text.strip())
+            if count <= 0:
+                raise ValueError
+        except ValueError:
+            await update.message.reply_text(get_message(lang, 'invalid_count'))
+            return LOG_TEST_COUNT
+        user_id = update.effective_user.id
+        subject = context.user_data.pop('temp_subject', None)
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                'INSERT INTO test_logs (user_id, date, subject, count) VALUES ($1, CURRENT_DATE, $2, $3)',
+                user_id, subject, count
+            )
+        await update.message.reply_text(get_message(lang, 'tests_logged'), reply_markup=main_menu_keyboard(lang))
+        return MAIN
+    except Exception as e:
+        logger.error(f"Error in log_test_count: {e}")
+        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'no_data'))
+        return MAIN
 
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler('start', start)],
@@ -255,50 +299,75 @@ application.add_handler(conv_handler)
 # 🔁 وب‌هوک تلگرام
 @app.post(WEBHOOK_PATH)
 async def telegram_webhook(request: Request):
-    data = await request.json()
-    update = Update.de_json(data, application.bot)
-    await application.process_update(update)
-    return {"ok": True}
+    try:
+        data = await request.json()
+        logger.info(f"Received webhook data: {data}")
+        update = Update.de_json(data, application.bot)
+        if update:
+            await application.process_update(update)
+            logger.info("Update processed successfully")
+        else:
+            logger.error("Failed to parse update")
+        return {"ok": True}
+    except Exception as e:
+        logger.error(f"Error in webhook: {e}")
+        return {"ok": False}
 
 # 🔥 زمان بالا آمدن سرور
 @app.on_event("startup")
 async def on_startup():
     global db_pool
-    db_pool = await asyncpg.create_pool(dsn=DB_URL)
-    async with db_pool.acquire() as conn:
-        await conn.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id BIGINT PRIMARY KEY,
-                name TEXT NOT NULL,
-                language TEXT NOT NULL
-            )
-        ''')
-        await conn.execute('''
-            CREATE TABLE IF NOT EXISTS study_logs (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT REFERENCES users(id),
-                date DATE NOT NULL,
-                subject TEXT NOT NULL,
-                minutes INTEGER NOT NULL
-            )
-        ''')
-        await conn.execute('''
-            CREATE TABLE IF NOT EXISTS test_logs (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT REFERENCES users(id),
-                date DATE NOT NULL,
-                subject TEXT NOT NULL,
-                count INTEGER NOT NULL
-            )
-        ''')
-    await application.bot.set_webhook(url=WEBHOOK_URL)
-    await application.initialize()
-    await application.start()
-    print("✅ Webhook set:", WEBHOOK_URL)
+    try:
+        logger.info("Starting up application...")
+        db_pool = await asyncpg.create_pool(dsn=DB_URL)
+        async with db_pool.acquire() as conn:
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id BIGINT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    language TEXT NOT NULL
+                )
+            ''')
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS study_logs (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT REFERENCES users(id),
+                    date DATE NOT NULL,
+                    subject TEXT NOT NULL,
+                    minutes INTEGER NOT NULL
+                )
+            ''')
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS test_logs (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT REFERENCES users(id),
+                    date DATE NOT NULL,
+                    subject TEXT NOT NULL,
+                    count INTEGER NOT NULL
+                )
+            ''')
+        logger.info("Database tables created successfully")
+        await application.bot.set_webhook(url=WEBHOOK_URL)
+        logger.info(f"Webhook set: {WEBHOOK_URL}")
+        await application.initialize()
+        await application.start()
+        logger.info("Application started successfully")
+    except Exception as e:
+        logger.error(f"Error during startup: {e}")
+        raise
 
 # 🛑 هنگام خاموشی
 @app.on_event("shutdown")
 async def on_shutdown():
-    await application.stop()
-    await application.shutdown()
-    await db_pool.close()
+    try:
+        logger.info("Shutting down application...")
+        await application.stop()
+        await application.shutdown()
+        await db_pool.close()
+        logger.info("Application shutdown successfully")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
