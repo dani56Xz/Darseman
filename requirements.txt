@@ -1,6 +1,5 @@
-python-telegram-bot==20.3
-fastapi==0.115.0
-uvicorn==0.30.6
-tenacity==8.5.0
-python-dotenv==1.0.1
-psycopg2-binary==2.9.10
+fastapi
+uvicorn
+python-telegram-bot>=20.0
+asyncpg
+matplotlib
