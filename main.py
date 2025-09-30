@@ -17,7 +17,7 @@ TOKEN = "8399118759:AAHPcVstB2N9l94Aorf-WGxbKHomv_EUepI"
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
 WEBHOOK_URL = f"https://darseman.onrender.com{WEBHOOK_PATH}"
 DB_URL = "postgresql://neondb_owner:npg_WtA2VhMHKcg6@ep-lively-queen-aely0rq7-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
-ADMIN_ID = 123456789  # جایگزین با ID واقعی ادمین خود کنید (عدد بزرگ تلگرامی)
+ADMIN_ID = 5542927340  # ایدی ادمین جدید
 
 # ⚙️ لاگ‌گیری
 logging.basicConfig(
@@ -33,16 +33,38 @@ app = FastAPI()
 application = Application.builder().token(TOKEN).updater(None).build()
 
 # حالات کانورسیشن
-CHOOSE_LANG, ENTER_NAME, MAIN, LOG_STUDY_SUBJECT, LOG_STUDY_TIME, LOG_TEST_SUBJECT, LOG_TEST_COUNT = range(7)
+CHOOSE_LANG, ENTER_NAME, ENTER_GRADE, MAIN, LOG_STUDY_SUBJECT, LOG_STUDY_TIME, LOG_TEST_SUBJECT, LOG_TEST_COUNT, \
+CHOOSE_SUBJECT, CHOOSE_CHAPTER, CHOOSE_TIME, CONFIRM_READ, ENTER_NOTE, VIEW_REPORT = range(14)
 
 db_pool = None
+
+# دیکشنری درس‌ها بر اساس پایه
+subjects_by_grade = {
+    '10': ['شیمی', 'ریاضی', 'فیزیک', 'زیست'],
+    '11': ['شیمی', 'ریاضی', 'فیزیک', 'زیست', 'زمین شناسی'],
+    '12': ['شیمی', 'ریاضی', 'فیزیک', 'زیست'],
+    'en_10': ['Chemistry', 'Math', 'Physics', 'Biology'],
+    'en_11': ['Chemistry', 'Math', 'Physics', 'Biology', 'Geology'],
+    'en_12': ['Chemistry', 'Math', 'Physics', 'Biology']
+}
+
+# دیکشنری تعداد فصل‌ها
+chapters_by_subject = {
+    '10': {'شیمی': 3, 'ریاضی': 7, 'فیزیک': 4, 'زیست': 7},
+    '11': {'شیمی': 3, 'ریاضی': 7, 'فیزیک': 3, 'زیست': 9, 'زمین شناسی': 7},
+    '12': {'شیمی': 4, 'ریاضی': 7, 'فیزیک': 4, 'زیست': 8},
+    'en_10': {'Chemistry': 3, 'Math': 7, 'Physics': 4, 'Biology': 7},
+    'en_11': {'Chemistry': 3, 'Math': 7, 'Physics': 3, 'Biology': 9, 'Geology': 7},
+    'en_12': {'Chemistry': 4, 'Math': 7, 'Physics': 4, 'Biology': 8}
+}
 
 def get_message(lang, key):
     messages = {
         'en': {
             'choose_lang': "🌍 Choose language:",
             'enter_name': "📝 Enter your name:",
-            'welcome_back': "👋 Welcome back, {name}! 📚",
+            'choose_grade': "📚 What grade are you in? (10th, 11th, 12th)",
+            'welcome_back': "👋 Welcome back to My Lesson, {name}! 📚",
             'saved': "✅ Your profile is saved! 🎉",
             'main_menu': "📋 Main Menu",
             'enter_subject': "📖 Enter the subject:",
@@ -58,11 +80,24 @@ def get_message(lang, key):
             'date_label': "📅 Date",
             'hours_label': "⏰ Hours",
             'count_label': "🔢 Count",
+            'my_lessons': "📖 My Lessons",
+            'choose_subject': "📚 Choose a subject:",
+            'choose_chapter': "📖 Choose a chapter for {subject}:",
+            'choose_time': "⏱️ Choose study time:",
+            'confirm_read': "✅ Read it?",
+            'enter_note': "📝 Do you have a note? (e.g., read half)",
+            'lesson_logged': "✅ Lesson study logged! 📈",
+            'view_report': "📊 View Study Report",
+            'report_title': "📊 Study Report",
+            'subjects_to_study': "📚 Subjects to study:",
+            'total_time': "⏰ Total study time: {total} minutes",
+            'notes': "📝 Notes:",
         },
         'fa': {
             'choose_lang': "🌍 زبان را انتخاب کنید:",
             'enter_name': "📝 نام خود را وارد کنید:",
-            'welcome_back': "👋 خوش آمدید دوباره، {name}! 📚",
+            'choose_grade': "📚 چندم هستید؟ (دهم، یازدهم، دوازدهم)",
+            'welcome_back': "👋 خوش آمدید دوباره به درس من، {name}! 📚",
             'saved': "✅ پروفایل شما ذخیره شد! 🎉",
             'main_menu': "📋 منوی اصلی",
             'enter_subject': "📖 درس را وارد کنید:",
@@ -78,6 +113,18 @@ def get_message(lang, key):
             'date_label': "📅 تاریخ",
             'hours_label': "⏰ ساعات",
             'count_label': "🔢 تعداد",
+            'my_lessons': "📖 درس های من",
+            'choose_subject': "📚 درس را انتخاب کنید:",
+            'choose_chapter': "📖 فصل را برای {subject} انتخاب کنید:",
+            'choose_time': "⏱️ زمان مطالعه را انتخاب کنید:",
+            'confirm_read': "✅ خوندم",
+            'enter_note': "📝 یادداشتی دارید؟ (مثلا نصفشو خوندم)",
+            'lesson_logged': "✅ مطالعه درس ثبت شد! 📈",
+            'view_report': "📊 گزارش مطالعه",
+            'report_title': "📊 گزارش مطالعه",
+            'subjects_to_study': "📚 درس‌هایی که باید بخوانید:",
+            'total_time': "⏰ مجموع زمان مطالعه: {total} دقیقه",
+            'notes': "📝 یادداشت‌ها:",
         }
     }
     return messages.get(lang, messages['en']).get(key, "")
@@ -87,14 +134,53 @@ def lang_keyboard():
         [InlineKeyboardButton("🇮🇷 فارسی", callback_data='lang_fa'), InlineKeyboardButton("🇬🇧 English", callback_data='lang_en')]
     ])
 
+def grade_keyboard(lang):
+    if lang == 'fa':
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("دهم", callback_data='grade_10'),
+             InlineKeyboardButton("یازدهم", callback_data='grade_11'),
+             InlineKeyboardButton("دوازدهم", callback_data='grade_12')]
+        ])
+    else:
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("10th", callback_data='grade_10'),
+             InlineKeyboardButton("11th", callback_data='grade_11'),
+             InlineKeyboardButton("12th", callback_data='grade_12')]
+        ])
+
 def main_menu_keyboard(lang):
     keyboard = [
+        [KeyboardButton(get_message(lang, 'my_lessons'))],
         [KeyboardButton("📚 ثبت مطالعه" if lang == 'fa' else "📚 Log Study")],
         [KeyboardButton("📈 نمودار مطالعه" if lang == 'fa' else "📈 View Study Chart")],
         [KeyboardButton("🧪 ثبت تست" if lang == 'fa' else "🧪 Log Test")],
         [KeyboardButton("📊 نمودار تست" if lang == 'fa' else "📊 View Test Chart")],
+        [KeyboardButton(get_message(lang, 'view_report'))],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+
+def subjects_keyboard(lang, grade):
+    key = 'en_' + grade if lang == 'en' else grade
+    subjects = subjects_by_grade.get(key, [])
+    keyboard = [[KeyboardButton(sub)] for sub in subjects]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+
+def chapters_keyboard(lang, grade, subject):
+    key = 'en_' + grade if lang == 'en' else grade
+    num_chapters = chapters_by_subject.get(key, {}).get(subject, 0)
+    chapters = [f"Chapter {i}" if lang == 'en' else f"فصل {i}" for i in range(1, num_chapters + 1)]
+    keyboard = [[KeyboardButton(chap)] for chap in chapters]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+
+def time_keyboard(lang):
+    times = ['10', '20', '30', '45', '60', '90', '120']
+    keyboard = [[KeyboardButton(time + (" minutes" if lang == 'en' else " دقیقه"))] for time in times]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+
+def confirm_keyboard(lang):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(get_message(lang, 'confirm_read'), callback_data='read_confirm')]
+    ])
 
 async def generate_chart(user_id, lang, is_study=True):
     try:
@@ -148,10 +234,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         user_id = update.effective_user.id
         logger.info(f"Start command received from user_id: {user_id}")
         async with db_pool.acquire() as conn:
-            row = await conn.fetchrow('SELECT name, language FROM users WHERE id = $1', user_id)
+            row = await conn.fetchrow('SELECT name, language, grade FROM users WHERE id = $1', user_id)
         if row:
             context.user_data['lang'] = row['language']
             context.user_data['name'] = row['name']
+            context.user_data['grade'] = row['grade']
             lang = context.user_data['lang']
             await update.message.reply_text(get_message(lang, 'welcome_back').format(name=row['name']), reply_markup=main_menu_keyboard(lang))
             return MAIN
@@ -183,17 +270,44 @@ async def enter_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             await update.message.reply_text(get_message(lang, 'enter_name'))
             return ENTER_NAME
         context.user_data['name'] = name
-        user_id = update.effective_user.id
+        await update.message.reply_text(get_message(lang, 'choose_grade'), reply_markup=grade_keyboard(lang))
+        return ENTER_GRADE
+    except Exception as e:
+        logger.error(f"Error in enter_name: {e}")
+        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'no_data'))
+        return ConversationHandler.END
+
+async def enter_grade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        query = update.callback_query
+        if query:
+            await query.answer()
+            grade = query.data.split('_')[1]
+        else:
+            text = update.message.text.strip()
+            lang = context.user_data['lang']
+            if lang == 'fa':
+                grade_map = {'دهم': '10', 'یازدهم': '11', 'دوازدهم': '12'}
+            else:
+                grade_map = {'10th': '10', '11th': '11', '12th': '12'}
+            grade = grade_map.get(text)
+            if not grade:
+                await update.message.reply_text(get_message(lang, 'choose_grade'))
+                return ENTER_GRADE
+        context.user_data['grade'] = grade
+        user_id = update.effective_user.id if query else update.message.from_user.id
+        name = context.user_data['name']
+        lang = context.user_data['lang']
         async with db_pool.acquire() as conn:
-            await conn.execute('INSERT INTO users (id, name, language) VALUES ($1, $2, $3)', user_id, name, lang)
-        await update.message.reply_text(get_message(lang, 'saved'), reply_markup=main_menu_keyboard(lang))
+            await conn.execute('INSERT INTO users (id, name, language, grade) VALUES ($1, $2, $3, $4)', user_id, name, lang, grade)
+        await (query.edit_message_text if query else update.message.reply_text)(get_message(lang, 'saved'), reply_markup=main_menu_keyboard(lang))
         
         # اطلاع‌رسانی به ادمین
-        await context.bot.send_message(ADMIN_ID, f"👤 کاربر جدید: {name} (ID: {user_id})")
+        await context.bot.send_message(ADMIN_ID, f"👤 کاربر جدید: {name} (ID: {user_id}, پایه: {grade})")
         
         return MAIN
     except Exception as e:
-        logger.error(f"Error in enter_name: {e}")
+        logger.error(f"Error in enter_grade: {e}")
         await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'no_data'))
         return ConversationHandler.END
 
@@ -201,7 +315,12 @@ async def main_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     try:
         lang = context.user_data['lang']
         text = update.message.text
-        if text in ["📚 ثبت مطالعه", "📚 Log Study"]:
+        if text == get_message(lang, 'my_lessons'):
+            await update.message.reply_text(get_message(lang, 'choose_subject'), reply_markup=subjects_keyboard(lang, context.user_data['grade']))
+            return CHOOSE_SUBJECT
+        elif text == get_message(lang, 'view_report'):
+            return await view_report(update, context)
+        elif text in ["📚 ثبت مطالعه", "📚 Log Study"]:
             await update.message.reply_text(get_message(lang, 'enter_subject'))
             return LOG_STUDY_SUBJECT
         elif text in ["📈 نمودار مطالعه", "📈 View Study Chart"]:
@@ -227,6 +346,106 @@ async def main_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     except Exception as e:
         logger.error(f"Error in main_message: {e}")
         await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'no_data'))
+        return MAIN
+
+async def choose_subject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        lang = context.user_data['lang']
+        grade = context.user_data['grade']
+        key = 'en_' + grade if lang == 'en' else grade
+        subject = update.message.text.strip()
+        if subject not in subjects_by_grade.get(key, []):
+            await update.message.reply_text(get_message(lang, 'choose_subject'))
+            return CHOOSE_SUBJECT
+        context.user_data['temp_subject'] = subject
+        await update.message.reply_text(get_message(lang, 'choose_chapter').format(subject=subject), reply_markup=chapters_keyboard(lang, grade, subject))
+        return CHOOSE_CHAPTER
+    except Exception as e:
+        logger.error(f"Error in choose_subject: {e}")
+        return ConversationHandler.END
+
+async def choose_chapter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        lang = context.user_data['lang']
+        chapter = update.message.text.strip()
+        # چک ساده برای معتبر بودن فصل
+        if not chapter.startswith("فصل ") and not chapter.startswith("Chapter "):
+            await update.message.reply_text(get_message(lang, 'choose_chapter').format(subject=context.user_data['temp_subject']))
+            return CHOOSE_CHAPTER
+        context.user_data['temp_chapter'] = chapter
+        await update.message.reply_text(get_message(lang, 'choose_time'), reply_markup=time_keyboard(lang))
+        return CHOOSE_TIME
+    except Exception as e:
+        logger.error(f"Error in choose_chapter: {e}")
+        return ConversationHandler.END
+
+async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        lang = context.user_data['lang']
+        time_text = update.message.text.strip()
+        minutes = int(time_text.split()[0])
+        context.user_data['temp_time'] = minutes
+        await update.message.reply_text(get_message(lang, 'confirm_read'), reply_markup=confirm_keyboard(lang))
+        return CONFIRM_READ
+    except Exception as e:
+        logger.error(f"Error in choose_time: {e}")
+        await update.message.reply_text(get_message(lang, 'invalid_time'))
+        return CHOOSE_TIME
+
+async def confirm_read(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        query = update.callback_query
+        await query.answer()
+        lang = context.user_data['lang']
+        await query.edit_message_text(text=get_message(lang, 'enter_note'))
+        return ENTER_NOTE
+    except Exception as e:
+        logger.error(f"Error in confirm_read: {e}")
+        return ConversationHandler.END
+
+async def enter_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        lang = context.user_data['lang']
+        note = update.message.text.strip()
+        user_id = update.effective_user.id
+        grade = context.user_data['grade']
+        subject = context.user_data.pop('temp_subject', None)
+        chapter = context.user_data.pop('temp_chapter', None)
+        minutes = context.user_data.pop('temp_time', 0)
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                'INSERT INTO lesson_logs (user_id, grade, subject, chapter, minutes, note, date) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE)',
+                user_id, grade, subject, chapter, minutes, note
+            )
+        await update.message.reply_text(get_message(lang, 'lesson_logged'), reply_markup=main_menu_keyboard(lang))
+        return MAIN
+    except Exception as e:
+        logger.error(f"Error in enter_note: {e}")
+        await update.message.reply_text(get_message(lang, 'no_data'))
+        return MAIN
+
+async def view_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        lang = context.user_data['lang']
+        grade = context.user_data['grade']
+        user_id = update.effective_user.id
+        key = 'en_' + grade if lang == 'en' else grade
+        subjects = subjects_by_grade.get(key, [])
+        report = get_message(lang, 'report_title') + "\n\n"
+        report += get_message(lang, 'subjects_to_study') + "\n" + "\n".join(subjects) + "\n\n"
+        
+        async with db_pool.acquire() as conn:
+            total_time = await conn.fetchval('SELECT SUM(minutes) FROM lesson_logs WHERE user_id = $1', user_id) or 0
+            notes_rows = await conn.fetch('SELECT note FROM lesson_logs WHERE user_id = $1 AND note IS NOT NULL', user_id)
+        
+        report += get_message(lang, 'total_time').format(total=total_time) + "\n\n"
+        report += get_message(lang, 'notes') + "\n" + "\n".join([row['note'] for row in notes_rows]) + "\n"
+        
+        await update.message.reply_text(report, reply_markup=main_menu_keyboard(lang))
+        return MAIN
+    except Exception as e:
+        logger.error(f"Error in view_report: {e}")
+        await update.message.reply_text(get_message(lang, 'no_data'))
         return MAIN
 
 async def log_study_subject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -323,7 +542,8 @@ async def backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users = await conn.fetch('SELECT * FROM users')
         study_logs = await conn.fetch('SELECT * FROM study_logs')
         test_logs = await conn.fetch('SELECT * FROM test_logs')
-    backup_str = f"Users:\n{users}\n\nStudy Logs:\n{study_logs}\n\nTest Logs:\n{test_logs}"
+        lesson_logs = await conn.fetch('SELECT * FROM lesson_logs')
+    backup_str = f"Users:\n{users}\n\nStudy Logs:\n{study_logs}\n\nTest Logs:\n{test_logs}\n\nLesson Logs:\n{lesson_logs}"
     buf = StringIO(backup_str)
     buf.seek(0)
     await update.message.reply_document(document=buf, filename='backup.txt')
@@ -335,6 +555,7 @@ async def clear_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async with db_pool.acquire() as conn:
         await conn.execute('DELETE FROM study_logs')
         await conn.execute('DELETE FROM test_logs')
+        await conn.execute('DELETE FROM lesson_logs')
         await conn.execute('DELETE FROM users')
     await update.message.reply_text("✅ Database cleared.")
 
@@ -343,11 +564,18 @@ conv_handler = ConversationHandler(
     states={
         CHOOSE_LANG: [CallbackQueryHandler(choose_lang, pattern='^lang_')],
         ENTER_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_name)],
+        ENTER_GRADE: [CallbackQueryHandler(enter_grade, pattern='^grade_'), MessageHandler(filters.TEXT & ~filters.COMMAND, enter_grade)],
         MAIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, main_message)],
         LOG_STUDY_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, log_study_subject)],
         LOG_STUDY_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, log_study_time)],
         LOG_TEST_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, log_test_subject)],
         LOG_TEST_COUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, log_test_count)],
+        CHOOSE_SUBJECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_subject)],
+        CHOOSE_CHAPTER: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_chapter)],
+        CHOOSE_TIME: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_time)],
+        CONFIRM_READ: [CallbackQueryHandler(confirm_read, pattern='^read_confirm')],
+        ENTER_NOTE: [MessageHandler(filters.TEXT & ~filters.COMMAND, enter_note)],
+        VIEW_REPORT: [MessageHandler(filters.TEXT & ~filters.COMMAND, view_report)],
     },
     fallbacks=[],
 )
@@ -386,7 +614,8 @@ async def on_startup():
                 CREATE TABLE IF NOT EXISTS users (
                     id BIGINT PRIMARY KEY,
                     name TEXT NOT NULL,
-                    language TEXT NOT NULL
+                    language TEXT NOT NULL,
+                    grade TEXT NOT NULL
                 )
             ''')
             await conn.execute('''
@@ -405,6 +634,18 @@ async def on_startup():
                     date DATE NOT NULL,
                     subject TEXT NOT NULL,
                     count INTEGER NOT NULL
+                )
+            ''')
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS lesson_logs (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT REFERENCES users(id),
+                    grade TEXT NOT NULL,
+                    subject TEXT NOT NULL,
+                    chapter TEXT NOT NULL,
+                    minutes INTEGER NOT NULL,
+                    note TEXT,
+                    date DATE NOT NULL
                 )
             ''')
         logger.info("Database tables created successfully")
