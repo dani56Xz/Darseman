@@ -5,7 +5,6 @@ from io import BytesIO, StringIO
 from datetime import date
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from matplotlib import font_manager
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, BotCommand
 from telegram.ext import (
@@ -17,7 +16,7 @@ TOKEN = "8399118759:AAHPcVstB2N9l94Aorf-WGxbKHomv_EUepI"
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
 WEBHOOK_URL = f"https://darseman.onrender.com{WEBHOOK_PATH}"
 DB_URL = "postgresql://neondb_owner:npg_WtA2VhMHKcg6@ep-lively-queen-aely0rq7-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
-ADMIN_ID = 5542927340  # ایدی ادمین جدید
+ADMIN_ID = 5542927340  # ایدی ادمین
 
 # ⚙️ لاگ‌گیری
 logging.basicConfig(
@@ -41,7 +40,7 @@ db_pool = None
 # دیکشنری درس‌ها بر اساس پایه
 subjects_by_grade = {
     '10': ['شیمی', 'ریاضی', 'فیزیک', 'زیست'],
-    '11': ['شیمی', 'ریاضی', 'فیزیک', 'زیست', 'زمین شناسی'],
+    '11': ['شیمی', 'ریاضی', 'فیزیک', 'زیست', 'زمین‌شناسی'],
     '12': ['شیمی', 'ریاضی', 'فیزیک', 'زیست'],
     'en_10': ['Chemistry', 'Math', 'Physics', 'Biology'],
     'en_11': ['Chemistry', 'Math', 'Physics', 'Biology', 'Geology'],
@@ -51,7 +50,7 @@ subjects_by_grade = {
 # دیکشنری تعداد فصل‌ها
 chapters_by_subject = {
     '10': {'شیمی': 3, 'ریاضی': 7, 'فیزیک': 4, 'زیست': 7},
-    '11': {'شیمی': 3, 'ریاضی': 7, 'فیزیک': 3, 'زیست': 9, 'زمین شناسی': 7},
+    '11': {'شیمی': 3, 'ریاضی': 7, 'فیزیک': 3, 'زیست': 9, 'زمین‌شناسی': 7},
     '12': {'شیمی': 4, 'ریاضی': 7, 'فیزیک': 4, 'زیست': 8},
     'en_10': {'Chemistry': 3, 'Math': 7, 'Physics': 4, 'Biology': 7},
     'en_11': {'Chemistry': 3, 'Math': 7, 'Physics': 3, 'Biology': 9, 'Geology': 7},
@@ -74,7 +73,7 @@ def get_message(lang, key):
             'enter_test_count': "🧪 Enter the number of tests:",
             'invalid_count': "❌ Invalid count. Please enter a number.",
             'tests_logged': "✅ Tests logged successfully! 📊",
-            'no_data': "📉 No data available for the chart.",
+            'no_data': "📉 No data available.",
             'study_chart_title': "📚 Study Hours (Last 7 Days)",
             'test_chart_title': "🧪 Tests Taken (Last 7 Days)",
             'date_label': "📅 Date",
@@ -85,13 +84,14 @@ def get_message(lang, key):
             'choose_chapter': "📖 Choose a chapter for {subject}:",
             'choose_time': "⏱️ Choose study time:",
             'confirm_read': "✅ Read it?",
-            'enter_note': "📝 Do you have a note? (e.g., read half)",
+            'enter_note': "📝 Do you have a note? (e.g., read half) or type 'none' to skip:",
             'lesson_logged': "✅ Lesson study logged! 📈",
             'view_report': "📊 View Study Report",
             'report_title': "📊 Study Report",
             'subjects_to_study': "📚 Subjects to study:",
             'total_time': "⏰ Total study time: {total} minutes",
             'notes': "📝 Notes:",
+            'error': "⚠️ An error occurred. Please try again later."
         },
         'fa': {
             'choose_lang': "🌍 زبان را انتخاب کنید:",
@@ -102,29 +102,30 @@ def get_message(lang, key):
             'main_menu': "📋 منوی اصلی",
             'enter_subject': "📖 درس را وارد کنید:",
             'enter_time': "⏱️ زمان مطالعه را به دقیقه وارد کنید:",
-            'invalid_time': "❌ زمان نامعتبر. لطفا عدد وارد کنید.",
+            'invalid_time': "❌ زمان نامعتبر. لطفاً عدد وارد کنید.",
             'logged': "✅ مطالعه ثبت شد! 📈",
             'enter_test_count': "🧪 تعداد تست‌ها را وارد کنید:",
-            'invalid_count': "❌ تعداد نامعتبر. لطفا عدد وارد کنید.",
+            'invalid_count': "❌ تعداد نامعتبر. لطفاً عدد وارد کنید.",
             'tests_logged': "✅ تست‌ها ثبت شد! 📊",
-            'no_data': "📉 داده‌ای برای نمودار موجود نیست.",
+            'no_data': "📉 داده‌ای موجود نیست.",
             'study_chart_title': "📚 ساعات مطالعه (۷ روز اخیر)",
             'test_chart_title': "🧪 تست‌های زده‌شده (۷ روز اخیر)",
             'date_label': "📅 تاریخ",
             'hours_label': "⏰ ساعات",
             'count_label': "🔢 تعداد",
-            'my_lessons': "📖 درس های من",
+            'my_lessons': "📖 درس‌های من",
             'choose_subject': "📚 درس را انتخاب کنید:",
             'choose_chapter': "📖 فصل را برای {subject} انتخاب کنید:",
             'choose_time': "⏱️ زمان مطالعه را انتخاب کنید:",
             'confirm_read': "✅ خوندم",
-            'enter_note': "📝 یادداشتی دارید؟ (مثلا نصفشو خوندم)",
+            'enter_note': "📝 یادداشتی دارید؟ (مثلاً نصفشو خوندم) یا بنویسید 'هیچ' برای رد کردن:",
             'lesson_logged': "✅ مطالعه درس ثبت شد! 📈",
             'view_report': "📊 گزارش مطالعه",
             'report_title': "📊 گزارش مطالعه",
             'subjects_to_study': "📚 درس‌هایی که باید بخوانید:",
             'total_time': "⏰ مجموع زمان مطالعه: {total} دقیقه",
             'notes': "📝 یادداشت‌ها:",
+            'error': "⚠️ خطایی رخ داد. لطفاً دوباره تلاش کنید."
         }
     }
     return messages.get(lang, messages['en']).get(key, "")
@@ -201,7 +202,7 @@ async def generate_chart(user_id, lang, is_study=True):
         values = [row['total'] / 60 if is_study else row['total'] for row in rows]
         
         fig, ax = plt.subplots(figsize=(10, 6))
-        colors = plt.cm.viridis(range(len(dates)))  # رنگ‌های متفاوت برای هر ستون
+        colors = plt.cm.viridis(range(len(dates)))
         ax.bar(dates, values, color=colors, width=0.4)
         ax.set_xlabel(get_message(lang, 'date_label'), fontsize=12)
         ax.set_ylabel(get_message(lang, label), fontsize=12)
@@ -212,13 +213,12 @@ async def generate_chart(user_id, lang, is_study=True):
         ax.grid(True, linestyle='--', alpha=0.7)
         
         if lang == 'fa':
-            # پشتیبانی از RTL برای فارسی
             plt.rcParams['text.usetex'] = False
             plt.rcParams['font.family'] = 'sans-serif'
-            plt.rcParams['font.sans-serif'] = ['DejaVuSans']  # فونت پیش‌فرض که RTL را پشتیبانی می‌کند
-            ax.set_title(get_message(lang, title_key)[::-1] if 'fa' in lang else get_message(lang, title_key), fontsize=14)
-            ax.set_xlabel(get_message(lang, 'date_label')[::-1] if 'fa' in lang else get_message(lang, 'date_label'), fontsize=12)
-            ax.set_ylabel(get_message(lang, label)[::-1] if 'fa' in lang else get_message(lang, label), fontsize=12)
+            plt.rcParams['font.sans-serif'] = ['DejaVuSans']
+            ax.set_title(get_message(lang, title_key)[::-1], fontsize=14)
+            ax.set_xlabel(get_message(lang, 'date_label')[::-1], fontsize=12)
+            ax.set_ylabel(get_message(lang, label)[::-1], fontsize=12)
         
         buf = BytesIO()
         plt.savefig(buf, format='png', bbox_inches='tight', dpi=100)
@@ -230,25 +230,44 @@ async def generate_chart(user_id, lang, is_study=True):
         return None, get_message(lang, 'no_data')
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+    logger.info(f"Start command received from user_id: {user_id}")
+    
     try:
-        user_id = update.effective_user.id
-        logger.info(f"Start command received from user_id: {user_id}")
         async with db_pool.acquire() as conn:
             row = await conn.fetchrow('SELECT name, language, grade FROM users WHERE id = $1', user_id)
+        
         if row:
             context.user_data['lang'] = row['language']
             context.user_data['name'] = row['name']
             context.user_data['grade'] = row['grade']
             lang = context.user_data['lang']
-            await update.message.reply_text(get_message(lang, 'welcome_back').format(name=row['name']), reply_markup=main_menu_keyboard(lang))
+            await update.message.reply_text(
+                get_message(lang, 'welcome_back').format(name=row['name']),
+                reply_markup=main_menu_keyboard(lang)
+            )
             return MAIN
         else:
-            await update.message.reply_text(get_message('en', 'choose_lang'), reply_markup=lang_keyboard())
+            await update.message.reply_text(
+                get_message('en', 'choose_lang'),
+                reply_markup=lang_keyboard()
+            )
             return CHOOSE_LANG
+            
+    except asyncpg.exceptions.InterfaceError as e:
+        logger.error(f"Database connection error in start: {e}")
+        await update.message.reply_text(
+            get_message('en', 'error'),
+            reply_markup=lang_keyboard()
+        )
+        return CHOOSE_LANG
     except Exception as e:
-        logger.error(f"Error in start: {e}")
-        await update.message.reply_text("❌ An error occurred. Please try again.")
-        return ConversationHandler.END
+        logger.error(f"Unexpected error in start: {e}")
+        await update.message.reply_text(
+            get_message('en', 'error'),
+            reply_markup=lang_keyboard()
+        )
+        return CHOOSE_LANG
 
 async def choose_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
@@ -260,11 +279,12 @@ async def choose_lang(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return ENTER_NAME
     except Exception as e:
         logger.error(f"Error in choose_lang: {e}")
+        await query.message.reply_text(get_message('en', 'error'))
         return ConversationHandler.END
 
 async def enter_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        lang = context.user_data['lang']
+        lang = context.user_data.get('lang', 'en')
         name = update.message.text.strip()
         if not name:
             await update.message.reply_text(get_message(lang, 'enter_name'))
@@ -274,18 +294,20 @@ async def enter_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ENTER_GRADE
     except Exception as e:
         logger.error(f"Error in enter_name: {e}")
-        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'no_data'))
+        await update.message.reply_text(get_message(lang, 'error'))
         return ConversationHandler.END
 
 async def enter_grade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         query = update.callback_query
+        lang = context.user_data.get('lang', 'en')
         if query:
             await query.answer()
             grade = query.data.split('_')[1]
+            reply_method = query.edit_message_text
+            user_id = query.from_user.id
         else:
             text = update.message.text.strip()
-            lang = context.user_data['lang']
             if lang == 'fa':
                 grade_map = {'دهم': '10', 'یازدهم': '11', 'دوازدهم': '12'}
             else:
@@ -294,13 +316,17 @@ async def enter_grade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             if not grade:
                 await update.message.reply_text(get_message(lang, 'choose_grade'))
                 return ENTER_GRADE
+            reply_method = update.message.reply_text
+            user_id = update.message.from_user.id
+        
         context.user_data['grade'] = grade
-        user_id = update.effective_user.id if query else update.message.from_user.id
         name = context.user_data['name']
-        lang = context.user_data['lang']
         async with db_pool.acquire() as conn:
-            await conn.execute('INSERT INTO users (id, name, language, grade) VALUES ($1, $2, $3, $4)', user_id, name, lang, grade)
-        await (query.edit_message_text if query else update.message.reply_text)(get_message(lang, 'saved'), reply_markup=main_menu_keyboard(lang))
+            await conn.execute(
+                'INSERT INTO users (id, name, language, grade) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET name = $2, language = $3, grade = $4',
+                user_id, name, lang, grade
+            )
+        await reply_method(get_message(lang, 'saved'), reply_markup=main_menu_keyboard(lang))
         
         # اطلاع‌رسانی به ادمین
         await context.bot.send_message(ADMIN_ID, f"👤 کاربر جدید: {name} (ID: {user_id}, پایه: {grade})")
@@ -308,15 +334,18 @@ async def enter_grade(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return MAIN
     except Exception as e:
         logger.error(f"Error in enter_grade: {e}")
-        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'no_data'))
+        await (query.message.reply_text if query else update.message.reply_text)(get_message(lang, 'error'))
         return ConversationHandler.END
 
 async def main_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        lang = context.user_data['lang']
+        lang = context.user_data.get('lang', 'en')
         text = update.message.text
         if text == get_message(lang, 'my_lessons'):
-            await update.message.reply_text(get_message(lang, 'choose_subject'), reply_markup=subjects_keyboard(lang, context.user_data['grade']))
+            await update.message.reply_text(
+                get_message(lang, 'choose_subject'),
+                reply_markup=subjects_keyboard(lang, context.user_data.get('grade', '10'))
+            )
             return CHOOSE_SUBJECT
         elif text == get_message(lang, 'view_report'):
             return await view_report(update, context)
@@ -345,43 +374,49 @@ async def main_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         return MAIN
     except Exception as e:
         logger.error(f"Error in main_message: {e}")
-        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'no_data'))
+        await update.message.reply_text(get_message(lang, 'error'))
         return MAIN
 
 async def choose_subject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        lang = context.user_data['lang']
-        grade = context.user_data['grade']
+        lang = context.user_data.get('lang', 'en')
+        grade = context.user_data.get('grade', '10')
         key = 'en_' + grade if lang == 'en' else grade
         subject = update.message.text.strip()
         if subject not in subjects_by_grade.get(key, []):
             await update.message.reply_text(get_message(lang, 'choose_subject'))
             return CHOOSE_SUBJECT
         context.user_data['temp_subject'] = subject
-        await update.message.reply_text(get_message(lang, 'choose_chapter').format(subject=subject), reply_markup=chapters_keyboard(lang, grade, subject))
+        await update.message.reply_text(
+            get_message(lang, 'choose_chapter').format(subject=subject),
+            reply_markup=chapters_keyboard(lang, grade, subject)
+        )
         return CHOOSE_CHAPTER
     except Exception as e:
         logger.error(f"Error in choose_subject: {e}")
+        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'error'))
         return ConversationHandler.END
 
 async def choose_chapter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        lang = context.user_data['lang']
+        lang = context.user_data.get('lang', 'en')
         chapter = update.message.text.strip()
-        # چک ساده برای معتبر بودن فصل
         if not chapter.startswith("فصل ") and not chapter.startswith("Chapter "):
-            await update.message.reply_text(get_message(lang, 'choose_chapter').format(subject=context.user_data['temp_subject']))
+            await update.message.reply_text(
+                get_message(lang, 'choose_chapter').format(subject=context.user_data.get('temp_subject', ''))
+            )
             return CHOOSE_CHAPTER
         context.user_data['temp_chapter'] = chapter
         await update.message.reply_text(get_message(lang, 'choose_time'), reply_markup=time_keyboard(lang))
         return CHOOSE_TIME
     except Exception as e:
         logger.error(f"Error in choose_chapter: {e}")
+        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'error'))
         return ConversationHandler.END
 
 async def choose_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        lang = context.user_data['lang']
+        lang = context.user_data.get('lang', 'en')
         time_text = update.message.text.strip()
         minutes = int(time_text.split()[0])
         context.user_data['temp_time'] = minutes
@@ -396,19 +431,22 @@ async def confirm_read(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     try:
         query = update.callback_query
         await query.answer()
-        lang = context.user_data['lang']
+        lang = context.user_data.get('lang', 'en')
         await query.edit_message_text(text=get_message(lang, 'enter_note'))
         return ENTER_NOTE
     except Exception as e:
         logger.error(f"Error in confirm_read: {e}")
+        await query.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'error'))
         return ConversationHandler.END
 
 async def enter_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        lang = context.user_data['lang']
+        lang = context.user_data.get('lang', 'en')
         note = update.message.text.strip()
+        if note.lower() == 'none' or note == 'هیچ':
+            note = None
         user_id = update.effective_user.id
-        grade = context.user_data['grade']
+        grade = context.user_data.get('grade', '10')
         subject = context.user_data.pop('temp_subject', None)
         chapter = context.user_data.pop('temp_chapter', None)
         minutes = context.user_data.pop('temp_time', 0)
@@ -421,13 +459,13 @@ async def enter_note(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return MAIN
     except Exception as e:
         logger.error(f"Error in enter_note: {e}")
-        await update.message.reply_text(get_message(lang, 'no_data'))
+        await update.message.reply_text(get_message(lang, 'error'))
         return MAIN
 
 async def view_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        lang = context.user_data['lang']
-        grade = context.user_data['grade']
+        lang = context.user_data.get('lang', 'en')
+        grade = context.user_data.get('grade', '10')
         user_id = update.effective_user.id
         key = 'en_' + grade if lang == 'en' else grade
         subjects = subjects_by_grade.get(key, [])
@@ -439,18 +477,21 @@ async def view_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             notes_rows = await conn.fetch('SELECT note FROM lesson_logs WHERE user_id = $1 AND note IS NOT NULL', user_id)
         
         report += get_message(lang, 'total_time').format(total=total_time) + "\n\n"
-        report += get_message(lang, 'notes') + "\n" + "\n".join([row['note'] for row in notes_rows]) + "\n"
+        if notes_rows:
+            report += get_message(lang, 'notes') + "\n" + "\n".join([row['note'] for row in notes_rows]) + "\n"
+        else:
+            report += get_message(lang, 'notes') + "\n" + get_message(lang, 'no_data') + "\n"
         
         await update.message.reply_text(report, reply_markup=main_menu_keyboard(lang))
         return MAIN
     except Exception as e:
         logger.error(f"Error in view_report: {e}")
-        await update.message.reply_text(get_message(lang, 'no_data'))
+        await update.message.reply_text(get_message(lang, 'error'))
         return MAIN
 
 async def log_study_subject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        lang = context.user_data['lang']
+        lang = context.user_data.get('lang', 'en')
         subject = update.message.text.strip()
         if not subject:
             await update.message.reply_text(get_message(lang, 'enter_subject'))
@@ -460,11 +501,12 @@ async def log_study_subject(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return LOG_STUDY_TIME
     except Exception as e:
         logger.error(f"Error in log_study_subject: {e}")
+        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'error'))
         return ConversationHandler.END
 
 async def log_study_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        lang = context.user_data['lang']
+        lang = context.user_data.get('lang', 'en')
         try:
             minutes = int(update.message.text.strip())
             if minutes <= 0:
@@ -483,12 +525,12 @@ async def log_study_time(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return MAIN
     except Exception as e:
         logger.error(f"Error in log_study_time: {e}")
-        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'no_data'))
+        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'error'))
         return MAIN
 
 async def log_test_subject(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        lang = context.user_data['lang']
+        lang = context.user_data.get('lang', 'en')
         subject = update.message.text.strip()
         if not subject:
             await update.message.reply_text(get_message(lang, 'enter_subject'))
@@ -498,11 +540,12 @@ async def log_test_subject(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return LOG_TEST_COUNT
     except Exception as e:
         logger.error(f"Error in log_test_subject: {e}")
+        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'error'))
         return ConversationHandler.END
 
 async def log_test_count(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
-        lang = context.user_data['lang']
+        lang = context.user_data.get('lang', 'en')
         try:
             count = int(update.message.text.strip())
             if count <= 0:
@@ -521,43 +564,58 @@ async def log_test_count(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return MAIN
     except Exception as e:
         logger.error(f"Error in log_test_count: {e}")
-        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'no_data'))
+        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'error'))
         return MAIN
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Access denied.")
         return
-    async with db_pool.acquire() as conn:
-        user_count = await conn.fetchval('SELECT COUNT(*) FROM users')
-        total_hours = await conn.fetchval('SELECT SUM(minutes)/60 FROM study_logs') or 0
-        total_tests = await conn.fetchval('SELECT SUM(count) FROM test_logs') or 0
-    await update.message.reply_text(f"📊 Stats:\n👥 Total users: {user_count}\n⏰ Total study hours: {total_hours}\n🧪 Total tests: {total_tests}")
+    try:
+        async with db_pool.acquire() as conn:
+            user_count = await conn.fetchval('SELECT COUNT(*) FROM users')
+            total_hours = await conn.fetchval('SELECT SUM(minutes)/60 FROM study_logs') or 0
+            total_tests = await conn.fetchval('SELECT SUM(count) FROM test_logs') or 0
+            total_lesson_minutes = await conn.fetchval('SELECT SUM(minutes) FROM lesson_logs') or 0
+        await update.message.reply_text(
+            f"📊 Stats:\n👥 Total users: {user_count}\n⏰ Total study hours: {total_hours}\n🧪 Total tests: {total_tests}\n📚 Total lesson minutes: {total_lesson_minutes}"
+        )
+    except Exception as e:
+        logger.error(f"Error in stats: {e}")
+        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'error'))
 
 async def backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Access denied.")
         return
-    async with db_pool.acquire() as conn:
-        users = await conn.fetch('SELECT * FROM users')
-        study_logs = await conn.fetch('SELECT * FROM study_logs')
-        test_logs = await conn.fetch('SELECT * FROM test_logs')
-        lesson_logs = await conn.fetch('SELECT * FROM lesson_logs')
-    backup_str = f"Users:\n{users}\n\nStudy Logs:\n{study_logs}\n\nTest Logs:\n{test_logs}\n\nLesson Logs:\n{lesson_logs}"
-    buf = StringIO(backup_str)
-    buf.seek(0)
-    await update.message.reply_document(document=buf, filename='backup.txt')
+    try:
+        async with db_pool.acquire() as conn:
+            users = await conn.fetch('SELECT * FROM users')
+            study_logs = await conn.fetch('SELECT * FROM study_logs')
+            test_logs = await conn.fetch('SELECT * FROM test_logs')
+            lesson_logs = await conn.fetch('SELECT * FROM lesson_logs')
+        backup_str = f"Users:\n{users}\n\nStudy Logs:\n{study_logs}\n\nTest Logs:\n{test_logs}\n\nLesson Logs:\n{lesson_logs}"
+        buf = StringIO(backup_str)
+        buf.seek(0)
+        await update.message.reply_document(document=buf, filename='backup.txt')
+    except Exception as e:
+        logger.error(f"Error in backup: {e}")
+        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'error'))
 
 async def clear_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ Access denied.")
         return
-    async with db_pool.acquire() as conn:
-        await conn.execute('DELETE FROM study_logs')
-        await conn.execute('DELETE FROM test_logs')
-        await conn.execute('DELETE FROM lesson_logs')
-        await conn.execute('DELETE FROM users')
-    await update.message.reply_text("✅ Database cleared.")
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute('DELETE FROM lesson_logs')
+            await conn.execute('DELETE FROM study_logs')
+            await conn.execute('DELETE FROM test_logs')
+            await conn.execute('DELETE FROM users')
+        await update.message.reply_text("✅ Database cleared.")
+    except Exception as e:
+        logger.error(f"Error in clear_db: {e}")
+        await update.message.reply_text(get_message(context.user_data.get('lang', 'en'), 'error'))
 
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler('start', start)],
@@ -608,7 +666,7 @@ async def on_startup():
     global db_pool
     try:
         logger.info("Starting up application...")
-        db_pool = await asyncpg.create_pool(dsn=DB_URL)
+        db_pool = await asyncpg.create_pool(dsn=DB_URL, min_size=1, max_size=10)
         async with db_pool.acquire() as conn:
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS users (
@@ -621,7 +679,7 @@ async def on_startup():
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS study_logs (
                     id SERIAL PRIMARY KEY,
-                    user_id BIGINT REFERENCES users(id),
+                    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
                     date DATE NOT NULL,
                     subject TEXT NOT NULL,
                     minutes INTEGER NOT NULL
@@ -630,7 +688,7 @@ async def on_startup():
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS test_logs (
                     id SERIAL PRIMARY KEY,
-                    user_id BIGINT REFERENCES users(id),
+                    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
                     date DATE NOT NULL,
                     subject TEXT NOT NULL,
                     count INTEGER NOT NULL
@@ -639,7 +697,7 @@ async def on_startup():
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS lesson_logs (
                     id SERIAL PRIMARY KEY,
-                    user_id BIGINT REFERENCES users(id),
+                    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
                     grade TEXT NOT NULL,
                     subject TEXT NOT NULL,
                     chapter TEXT NOT NULL,
@@ -650,7 +708,6 @@ async def on_startup():
             ''')
         logger.info("Database tables created successfully")
         
-        # تنظیم منوی بات (همبرگری آبی)
         commands = [BotCommand("start", "Start the bot 🚀")]
         await application.bot.set_my_commands(commands)
         
@@ -670,7 +727,8 @@ async def on_shutdown():
         logger.info("Shutting down application...")
         await application.stop()
         await application.shutdown()
-        await db_pool.close()
+        if db_pool:
+            await db_pool.close()
         logger.info("Application shutdown successfully")
     except Exception as e:
         logger.error(f"Error during shutdown: {e}")
