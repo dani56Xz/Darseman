@@ -14,7 +14,7 @@ from telegram.ext import (
 
 # تنظیم توکن و URL وب‌هوک
 TOKEN = "8399118759:AAHPcVstB2N9l94Aorf-WGxbKHomv_EUepI"
-ADMIN_ID = 8399118759  # آیدی ادمین - تغییر بده
+ADMIN_ID = 5542927340  # آیدی ادمین - تغییر بده
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
 WEBHOOK_URL = f"https://darseman.onrender.com{WEBHOOK_PATH}"
 DB_URL = "postgresql://neondb_owner:npg_WtA2VhMHKcg6@ep-lively-queen-aely0rq7-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
